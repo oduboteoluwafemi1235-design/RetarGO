@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cart - RetarGO</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="container nav-bar">
+        <a class="brand" href="index.html">RetarGO</a>
+        <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+        <div class="nav-links">
+          <a href="products.html">Products</a>
+          <a href="cart.html">Cart</a>
+          <a href="profile.html">Profile</a>
+          <button class="theme-toggle" type="button" aria-label="Toggle theme">🌙</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container page">
+      <h1>Your cart</h1>
+      <div class="cart-layout">
+        <div class="cart-box">
+          <div class="cart-item">
+            <div>
+              <h3>Studio Pro Headphones</h3>
+              <p>Premium audio gear</p>
+            </div>
+            <div class="cart-controls">
+              <button class="qty-btn" data-action="decrease">−</button>
+              <span class="qty-value">1</span>
+              <button class="qty-btn" data-action="increase">+</button>
+            </div>
+            <div class="price">$149</div>
+          </div>
+        </div>
+
+        <div class="cart-box summary-box">
+          <h3>Order summary</h3>
+          <p>Subtotal: <strong id="subtotal">$149</strong></p>
+          <p>Shipping: <strong>Free</strong></p>
+          <a href="checkout.html" class="btn btn-primary">Proceed to checkout</a>
+        </div>
+      </div>
+    </main>
+
+    <script src="js/cart.js"></script>
+    <script src="js/script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RetarGO Marketplace</title>
+    <meta
+      name="description"
+      content="A polished marketplace experience for buyers, sellers, and admins."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="container nav-bar">
+        <a class="brand" href="index.html">RetarGO</a>
+        <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          ☰
+        </button>
+        <div class="nav-links">
+          <a href="products.html">Products</a>
+          <a href="cart.html">Cart</a>
+          <a href="seller-dashboard.html">Seller</a>
+          <a href="admin-dashboard.html">Admin</a>
+          <a class="nav-cta" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Trusted marketplace for modern shoppers</p>
+            <h1>Shop smarter, sell faster, and manage everything in one place.</h1>
+            <p class="hero-text">
+              RetarGO brings together discovery, secure checkout, seller tools, analytics,
+              and admin controls in a smooth multi-role commerce experience.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="products.html">Explore products</a>
+              <a class="btn btn-secondary" href="seller-dashboard.html">Become a seller</a>
+            </div>
+            <div class="hero-stats">
+              <div class="stat-pill">15k+ buyers</div>
+              <div class="stat-pill">500+ sellers</div>
+              <div class="stat-pill">24/7 support</div>
+            </div>
+          </div>
+
+          <div class="hero-card">
+            <h3>Why merchants love RetarGO</h3>
+            <ul>
+              <li>Fast product discovery and filters</li>
+              <li>Simple seller onboarding and inventory tools</li>
+              <li>Admin visibility for orders, payments, and reports</li>
+              <li>Flexible payment options and promotions</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="featured" class="section container">
+        <div class="section-heading">
+          <p class="eyebrow">Featured products</p>
+          <h2>Popular picks from trusted sellers</h2>
+        </div>
+
+        <div class="product-grid">
+          <article class="product-card">
+            <img src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=80" alt="Studio Pro headphones" />
+            <div class="product-body">
+              <span class="product-tag">Audio</span>
+              <h3>Studio Pro Headphones</h3>
+              <p>Immersive sound with active noise cancellation and premium comfort.</p>
+              <div class="product-meta">
+                <span class="price">$149</span>
+                <a href="product.html">View</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="product-card">
+            <img src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80" alt="Ultrawide monitor" />
+            <div class="product-body">
+              <span class="product-tag">Display</span>
+              <h3>UltraWide Curved Monitor</h3>
+              <p>Ideal for creators, coding, and multitasking with crystal clarity.</p>
+              <div class="product-meta">
+                <span class="price">$329</span>
+                <a href="product.html">View</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="product-card">
+            <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80" alt="Wireless keyboard" />
+            <div class="product-body">
+              <span class="product-tag">Accessories</span>
+              <h3>Wireless Precision Keyboard</h3>
+              <p>Quiet, responsive, and designed for long work sessions.</p>
+              <div class="product-meta">
+                <span class="price">$89</span>
+                <a href="product.html">View</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section highlight-section">
+        <div class="container highlight-grid">
+          <div>
+            <p class="eyebrow">For every role</p>
+            <h2>Everything a modern marketplace needs, from browsing to administration.</h2>
+          </div>
+          <div class="pill-group">
+            <span>Buyers</span>
+            <span>Sellers</span>
+            <span>Admins</span>
+            <span>Super Admin</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <p>© <span id="year"></span> RetarGO. All rights reserved.</p>
+      </div>
+    </footer>
+
+    <script src="js/script.js"></script>
+  </body>
+</html>

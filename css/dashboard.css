@@ -1,0 +1,2 @@
+.dashboard-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.panel h3 { margin-top: 0; }
