@@ -17,6 +17,10 @@ function isTestPaymentMode() {
   return process.env.RETARGO_ENABLE_TEST_PAYMENTS === 'true';
 }
 
+function isDevelopmentMode() {
+  return process.env.NODE_ENV === 'development';
+}
+
 const addressSchema = z.object({
   label: z.string().trim().min(2, 'Address label is required').max(60, 'Address label is too long'),
   fullName: z.string().trim().min(2, 'Full name is required').max(120, 'Full name is too long'),
@@ -98,7 +102,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
 
     const { data: cartRows, error: cartError } = await supabase
       .from('cart')
-      .select('id, quantity, products(price)')
+      .select('id, quantity, products(price, quantity, seller_id, title)')
       .eq('user_id', user.id);
 
     if (cartError) {
@@ -107,6 +111,16 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
 
     if (!cartRows || cartRows.length === 0) {
       return { ok: false, error: 'Your cart is empty. Add items before checkout.' };
+    }
+
+    const sellerIds = [...new Set((cartRows as Array<{ products: { seller_id: string | null } | null }>).map((row) => row.products?.seller_id).filter(Boolean))];
+    if (sellerIds.length > 1) {
+      return { ok: false, error: 'Checkout supports one seller per order. Remove items from other sellers before continuing.' };
+    }
+
+    const insufficientStockItem = (cartRows as Array<{ quantity: number; products: { quantity: number; title: string } | null }>).find((row) => Number(row.quantity ?? 0) > Number(row.products?.quantity ?? 0));
+    if (insufficientStockItem) {
+      return { ok: false, error: `Insufficient stock for ${insufficientStockItem.products?.title ?? 'one of the items'}.` };
     }
 
     const totals = calculateCheckoutTotals(cartRows as Array<{ quantity: number; products: { price: number } | null }>);
@@ -160,6 +174,30 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       isTestPaymentMode() &&
       ((provider === 'paystack' && !process.env.PAYSTACK_SECRET_KEY) ||
         (provider === 'flutterwave' && !process.env.FLUTTERWAVE_SECRET_KEY));
+
+    const runningDevelopmentPaystackBypass =
+      isDevelopmentMode() &&
+      provider === 'paystack' &&
+      !process.env.PAYSTACK_SECRET_KEY;
+
+    if (runningDevelopmentPaystackBypass) {
+      await createPaymentAttempt({
+        orderId: String(createdOrder.id),
+        buyerId: user.id,
+        provider,
+        providerReference: paymentReference,
+        amount: totals.total,
+        currency: 'NGN',
+        paymentUrl: null,
+        status: 'pending',
+      });
+
+      return {
+        ok: true,
+        orderNumber: createdOrder.order_number,
+        paymentReference,
+      };
+    }
 
     if (runningTestFallback) {
       const paidAt = new Date().toISOString();

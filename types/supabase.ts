@@ -73,8 +73,10 @@ export type OrderItemTable = {
   id: number;
   order_id: number;
   product_id: string;
+  product_title: string;
   quantity: number;
   unit_price: number;
+  total: number;
 };
 
 export type ReviewsTable = {

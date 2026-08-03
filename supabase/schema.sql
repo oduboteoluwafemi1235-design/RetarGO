@@ -93,8 +93,10 @@ create table if not exists public.order_items (
   id bigserial primary key,
   order_id uuid not null,
   product_id uuid not null,
+  product_title text not null,
   quantity integer not null check (quantity > 0),
-  unit_price numeric not null check (unit_price >= 0)
+  unit_price numeric not null check (unit_price >= 0),
+  total numeric not null check (total >= 0)
 );
 
 create table if not exists public.payments (
@@ -177,8 +179,10 @@ alter table public.orders add column if not exists created_at timestamptz defaul
 
 alter table public.order_items add column if not exists order_id uuid;
 alter table public.order_items add column if not exists product_id uuid;
+alter table public.order_items add column if not exists product_title text;
 alter table public.order_items add column if not exists quantity integer;
 alter table public.order_items add column if not exists unit_price numeric;
+alter table public.order_items add column if not exists total numeric;
 
 alter table public.payments add column if not exists order_id uuid;
 alter table public.payments add column if not exists buyer_id uuid;
@@ -371,11 +375,32 @@ exception when duplicate_object then
   null;
 end $$;
 
+update public.order_items oi
+set product_title = coalesce(oi.product_title, p.title)
+from public.products p
+where oi.product_id = p.id
+  and oi.product_title is null;
+
+update public.order_items
+set product_title = coalesce(product_title, 'Product')
+where product_title is null;
+
+update public.order_items
+set total = coalesce(total, quantity * unit_price)
+where total is null;
+
+alter table public.order_items alter column product_title set default 'Product';
+alter table public.order_items alter column product_title set not null;
+alter table public.order_items alter column total set default 0;
+alter table public.order_items alter column total set not null;
+
 -- Indexes
 create unique index if not exists idx_orders_order_number on public.orders(order_number);
 create unique index if not exists idx_orders_checkout_token on public.orders(checkout_token) where checkout_token is not null;
 create index if not exists idx_orders_buyer_created_at on public.orders(buyer_id, created_at desc);
+create index if not exists idx_orders_seller_created_at on public.orders(seller_id, created_at desc);
 create index if not exists idx_order_items_order_id on public.order_items(order_id);
+create index if not exists idx_order_items_product_id on public.order_items(product_id);
 create index if not exists idx_addresses_user_id on public.addresses(user_id);
 create unique index if not exists idx_single_default_address_per_user on public.addresses(user_id) where is_default = true;
 create unique index if not exists idx_payments_provider_reference on public.payments(provider_reference);
@@ -432,8 +457,39 @@ drop policy if exists "Buyers view own orders" on public.orders;
 drop policy if exists "Buyers create own orders" on public.orders;
 drop policy if exists "Buyers view own order items" on public.order_items;
 drop policy if exists "Buyers create own order items" on public.order_items;
+drop policy if exists "Sellers view related orders" on public.orders;
+drop policy if exists "Sellers update related orders" on public.orders;
+drop policy if exists "Sellers view own order items" on public.order_items;
 create policy "Buyers view own orders" on public.orders for select using (auth.uid() = buyer_id);
 create policy "Buyers create own orders" on public.orders for insert with check (auth.uid() = buyer_id);
+create policy "Sellers view related orders" on public.orders
+  for select using (
+    auth.uid() = seller_id
+    or exists (
+      select 1
+      from public.order_items oi
+      join public.products p on p.id = oi.product_id
+      where oi.order_id = orders.id and p.seller_id = auth.uid()
+    )
+  );
+create policy "Sellers update related orders" on public.orders
+  for update using (
+    auth.uid() = seller_id
+    or exists (
+      select 1
+      from public.order_items oi
+      join public.products p on p.id = oi.product_id
+      where oi.order_id = orders.id and p.seller_id = auth.uid()
+    )
+  ) with check (
+    auth.uid() = seller_id
+    or exists (
+      select 1
+      from public.order_items oi
+      join public.products p on p.id = oi.product_id
+      where oi.order_id = orders.id and p.seller_id = auth.uid()
+    )
+  );
 create policy "Buyers view own order items" on public.order_items
   for select using (
     exists (
@@ -448,6 +504,15 @@ create policy "Buyers create own order items" on public.order_items
       select 1
       from public.orders o
       where o.id = order_items.order_id and o.buyer_id = auth.uid()
+    )
+  );
+create policy "Sellers view own order items" on public.order_items
+  for select using (
+    exists (
+      select 1
+      from public.orders o
+      join public.products p on p.id = order_items.product_id
+      where o.id = order_items.order_id and p.seller_id = auth.uid()
     )
   );
 
@@ -630,6 +695,8 @@ declare
   v_existing public.orders%rowtype;
   v_cart_subtotal numeric;
   v_first_seller uuid;
+  v_seller_count integer;
+  v_cart_item record;
 begin
   if auth.uid() is distinct from buyer then
     raise exception 'Unauthorized checkout attempt.';
@@ -647,6 +714,20 @@ begin
       select v_existing.id, v_existing.order_number, v_existing.total, v_existing.status, v_existing.created_at;
       return;
     end if;
+  end if;
+
+  select count(distinct p.seller_id), min(p.seller_id)
+  into v_seller_count, v_first_seller
+  from public.cart c
+  join public.products p on p.id = c.product_id
+  where c.user_id = buyer;
+
+  if v_seller_count = 0 then
+    raise exception 'Cart is empty.';
+  end if;
+
+  if v_seller_count > 1 then
+    raise exception 'Checkout supports products from one seller at a time.';
   end if;
 
   select coalesce(sum(c.quantity * p.price), 0)
@@ -667,13 +748,22 @@ begin
     raise exception 'Invalid total amount.';
   end if;
 
-  select p.seller_id
-  into v_first_seller
-  from public.cart c
-  join public.products p on p.id = c.product_id
-  where c.user_id = buyer
-  order by c.id asc
-  limit 1;
+  for v_cart_item in
+    select c.product_id, c.quantity, p.price, p.title, p.quantity as stock_quantity
+    from public.cart c
+    join public.products p on p.id = c.product_id
+    where c.user_id = buyer
+    for update of p
+  loop
+    if v_cart_item.quantity > v_cart_item.stock_quantity then
+      raise exception 'Insufficient stock for %.', v_cart_item.title;
+    end if;
+
+    update public.products
+    set quantity = quantity - v_cart_item.quantity,
+        status = case when quantity - v_cart_item.quantity <= 0 then 'sold' else status end
+    where id = v_cart_item.product_id;
+  end loop;
 
   insert into public.orders (
     buyer_id,
@@ -707,8 +797,8 @@ begin
   )
   returning orders.id into v_order_id;
 
-  insert into public.order_items (order_id, product_id, quantity, unit_price)
-  select v_order_id, c.product_id, c.quantity, p.price
+  insert into public.order_items (order_id, product_id, product_title, quantity, unit_price, total)
+  select v_order_id, c.product_id, p.title, c.quantity, p.price, c.quantity * p.price
   from public.cart c
   join public.products p on p.id = c.product_id
   where c.user_id = buyer;

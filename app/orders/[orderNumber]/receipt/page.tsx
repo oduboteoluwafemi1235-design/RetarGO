@@ -74,7 +74,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ orderN
             <tbody>
               {order.order_items?.map((item: any) => (
                 <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
-                  <td className="px-4 py-3">{item.products?.title ?? 'Product'}</td>
+                  <td className="px-4 py-3">{item.product_title ?? item.products?.title ?? 'Product'}</td>
                   <td className="px-4 py-3">{item.quantity}</td>
                   <td className="px-4 py-3 text-right">{formatCurrency(Number(item.unit_price) * item.quantity)}</td>
                 </tr>

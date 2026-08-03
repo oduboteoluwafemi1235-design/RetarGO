@@ -226,7 +226,7 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
   const [orderItemsResult, buyersResult] = await Promise.all([
     orderIds.length
       ? (dataClient.from('order_items') as any)
-          .select('id, order_id, product_id, quantity, unit_price, products(title, images)')
+            .select('id, order_id, product_id, quantity, unit_price, total, products(title, images)')
           .in('order_id', orderIds)
       : Promise.resolve({ data: [], error: null }),
     buyerIds.length
@@ -250,6 +250,7 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
     product_id: string;
     quantity: number;
     unit_price: number;
+    total: number | null;
     products?: { title?: string | null; images?: string[] | null } | null;
   }>;
 

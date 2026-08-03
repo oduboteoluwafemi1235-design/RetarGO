@@ -185,7 +185,11 @@ export default function SellerDashboardClient({
   const [productStatusFilter, setProductStatusFilter] = useState<'all' | SellerProduct['status']>('all');
   const [productSort, setProductSort] = useState<ProductSort>('newest');
   const [productPage, setProductPage] = useState(1);
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | SellerOrder['status']>('all');
+  const [orderPage, setOrderPage] = useState(1);
   const pageSize = 6;
+  const orderPageSize = 5;
 
   useEffect(() => {
     setProducts(initialProducts);
@@ -254,9 +258,35 @@ export default function SellerDashboardClient({
   const currentProductPage = Math.min(productPage, totalProductPages);
   const paginatedProducts = filteredProducts.slice((currentProductPage - 1) * pageSize, currentProductPage * pageSize);
 
+  const filteredOrders = useMemo(() => {
+    const search = orderSearch.trim().toLowerCase();
+
+    return orders.filter((order) => {
+      const matchesStatus = orderStatusFilter === 'all' || order.status === orderStatusFilter;
+      const matchesSearch = !search || [
+        order.orderNumber,
+        order.buyerName,
+        order.buyerEmail,
+        order.contactEmail,
+        order.contactPhone,
+        ...order.items.map((item) => item.productTitle),
+      ].some((value) => value.toLowerCase().includes(search));
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [orders, orderSearch, orderStatusFilter]);
+
+  const totalOrderPages = Math.max(1, Math.ceil(filteredOrders.length / orderPageSize));
+  const currentOrderPage = Math.min(orderPage, totalOrderPages);
+  const paginatedOrders = filteredOrders.slice((currentOrderPage - 1) * orderPageSize, currentOrderPage * orderPageSize);
+
   useEffect(() => {
     setProductPage(1);
   }, [productFilter, productCategoryFilter, productStatusFilter, productSort]);
+
+  useEffect(() => {
+    setOrderPage(1);
+  }, [orderSearch, orderStatusFilter]);
 
   const isEditingProduct = Boolean(productDraft.id);
 
@@ -744,12 +774,48 @@ export default function SellerDashboardClient({
 
       {activeSection === 'orders' ? (
         <section className="space-y-4">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+              <input
+                value={orderSearch}
+                onChange={(event) => setOrderSearch(event.target.value)}
+                placeholder="Search order number, buyer, contact, or product"
+                className="w-full rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950"
+              />
+              <select
+                value={orderStatusFilter}
+                onChange={(event) => setOrderStatusFilter(event.target.value as SellerOrder['status'] | 'all')}
+                className="rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <Button size="sm" variant="secondary" onClick={() => { setOrderSearch(''); setOrderStatusFilter('all'); }}>
+                Clear filters
+              </Button>
+            </div>
+          </div>
+
           {orders.length === 0 ? (
             <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               No seller orders yet.
             </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              No orders match your search.
+            </div>
           ) : (
-            orders.map((order) => (
+            <>
+              <div className="flex items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+                <p>Showing {paginatedOrders.length} of {filteredOrders.length} orders</p>
+                <p>Page {currentOrderPage} of {totalOrderPages}</p>
+              </div>
+
+              {paginatedOrders.map((order) => (
               <article key={order.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
@@ -790,6 +856,9 @@ export default function SellerDashboardClient({
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => handleUpdateOrderStatus(order.id, 'shipped')} disabled={processingOrderId === order.id}>Mark shipped</Button>
                   <Button size="sm" variant="secondary" onClick={() => handleUpdateOrderStatus(order.id, 'delivered')} disabled={processingOrderId === order.id}>Mark delivered</Button>
+                  <Button size="sm" variant="secondary" asChild>
+                    <Link href={`/seller-dashboard/orders/${order.orderNumber}`}>View details</Link>
+                  </Button>
                   <select
                     value={order.status}
                     onChange={(event) => handleUpdateOrderStatus(order.id, event.target.value as SellerOrder['status'])}
@@ -804,7 +873,26 @@ export default function SellerDashboardClient({
                   </select>
                 </div>
               </article>
-            ))
+              ))}
+
+              {totalOrderPages > 1 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <Button size="sm" variant="secondary" onClick={() => setOrderPage((current) => Math.max(1, current - 1))} disabled={currentOrderPage <= 1}>
+                    Previous
+                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from({ length: totalOrderPages }, (_, index) => index + 1).map((pageNumber) => (
+                      <Button key={pageNumber} size="sm" variant={pageNumber === currentOrderPage ? 'primary' : 'secondary'} onClick={() => setOrderPage(pageNumber)}>
+                        {pageNumber}
+                      </Button>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => setOrderPage((current) => Math.min(totalOrderPages, current + 1))} disabled={currentOrderPage >= totalOrderPages}>
+                    Next
+                  </Button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       ) : null}

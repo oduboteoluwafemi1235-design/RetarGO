@@ -63,7 +63,7 @@ export default async function CheckoutSuccessPage({ searchParams }: { searchPara
             {order.order_items?.map((item: any) => (
               <div key={item.id} className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium">{item.products?.title ?? 'Product'}</p>
+                  <p className="font-medium">{item.product_title ?? item.products?.title ?? 'Product'}</p>
                   <p className="text-slate-500 dark:text-slate-400">Qty {item.quantity}</p>
                 </div>
                 <p className="font-medium">{formatCurrency(Number(item.unit_price) * item.quantity)}</p>

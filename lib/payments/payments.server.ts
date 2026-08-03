@@ -47,7 +47,7 @@ export async function createPaymentAttempt(input: {
   providerReference: string;
   amount: number;
   currency?: string;
-  paymentUrl: string;
+  paymentUrl?: string | null;
   status?: PaymentStatus;
   receiptNumber?: string | null;
   paidAt?: string | null;
@@ -63,7 +63,7 @@ export async function createPaymentAttempt(input: {
       amount: input.amount,
       currency: input.currency ?? 'NGN',
       status: input.status ?? 'pending',
-      payment_url: input.paymentUrl,
+      payment_url: input.paymentUrl ?? null,
       receipt_number: input.receiptNumber ?? null,
       paid_at: input.paidAt ?? null,
     })
@@ -86,7 +86,7 @@ export async function createPaymentAttempt(input: {
         amount: input.amount,
         currency: input.currency ?? 'NGN',
         status: input.status ?? 'pending',
-        payment_url: input.paymentUrl,
+        payment_url: input.paymentUrl ?? null,
         receipt_number: input.receiptNumber ?? null,
         paid_at: input.paidAt ?? null,
         failure_reason: null,

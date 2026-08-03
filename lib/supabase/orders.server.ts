@@ -120,7 +120,7 @@ export async function getOrderByNumber(userId: string, orderNumber: string) {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, order_number, contact_email, contact_phone, subtotal, shipping_cost, tax_amount, coupon_code, total, status, created_at, shipping_address_id, shipping_address:shipping_address_id(*), order_items(id, quantity, unit_price, products(id, title, price, images))'
+      'id, order_number, contact_email, contact_phone, subtotal, shipping_cost, tax_amount, coupon_code, total, status, created_at, shipping_address_id, shipping_address:shipping_address_id(*), order_items(id, quantity, unit_price, total, products(id, title, price, images))'
     )
     .eq('buyer_id', userId)
     .eq('order_number', orderNumber)
@@ -135,7 +135,7 @@ export async function getOrderByNumberPublic(orderNumber: string) {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, order_number, contact_email, contact_phone, subtotal, shipping_cost, tax_amount, coupon_code, total, status, created_at, shipping_address_id, shipping_address:shipping_address_id(*), order_items(id, quantity, unit_price, products(id, title, price, images))'
+      'id, order_number, contact_email, contact_phone, subtotal, shipping_cost, tax_amount, coupon_code, total, status, created_at, shipping_address_id, shipping_address:shipping_address_id(*), order_items(id, quantity, unit_price, total, products(id, title, price, images))'
     )
     .eq('order_number', orderNumber)
     .single();
@@ -204,11 +204,44 @@ export async function createOrderFromCart(userId: string, input: CreateOrderInpu
   }
 
   const { data: cartRows, error: cartError } = await (supabase.from('cart') as any)
-    .select('product_id, quantity, products(id, seller_id, price)')
+    .select('product_id, quantity, products(id, seller_id, price, title, quantity)')
     .eq('user_id', userId);
 
   if (cartError) throw new Error(cartError.message);
   if (!cartRows || cartRows.length === 0) throw new Error('Cart is empty.');
+
+  const sellerIds = [...new Set(cartRows.map((row: any) => row.products?.seller_id).filter(Boolean))];
+  if (sellerIds.length > 1) {
+    throw new Error('Checkout supports products from one seller at a time. Please remove items from other sellers.');
+  }
+
+  const insufficientStockItem = cartRows.find((row: any) => Number(row.quantity ?? 0) > Number(row.products?.quantity ?? 0));
+  if (insufficientStockItem) {
+    throw new Error(`Insufficient stock for ${insufficientStockItem.products?.title ?? 'one of the items'}.`);
+  }
+
+  for (const row of cartRows as any[]) {
+    const quantity = Number(row.quantity ?? 0);
+    const stockQuantity = Number(row.products?.quantity ?? 0);
+
+    if (quantity > stockQuantity) {
+      throw new Error(`Insufficient stock for ${row.products?.title ?? 'one of the items'}.`);
+    }
+
+    const nextQuantity = stockQuantity - quantity;
+    const updatePayload: Record<string, unknown> = { quantity: nextQuantity };
+    if (nextQuantity <= 0) {
+      updatePayload.status = 'sold';
+    }
+
+    const { error: stockUpdateError } = await (supabase.from('products') as any)
+      .update(updatePayload)
+      .eq('id', row.product_id);
+
+    if (stockUpdateError) {
+      throw new Error(stockUpdateError.message);
+    }
+  }
 
   const firstSeller = cartRows.find((row: any) => row.products?.seller_id)?.products?.seller_id ?? null;
   const { data: insertedOrder, error: insertOrderError } = await (supabase.from('orders') as any)

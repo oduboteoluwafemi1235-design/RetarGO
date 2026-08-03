@@ -18,6 +18,17 @@ function titleCaseStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+const statusOrder = ['pending', 'processing', 'shipped', 'delivered'] as const;
+
+function getProgressIndex(status: string) {
+  if (status === 'cancelled') {
+    return -1;
+  }
+
+  const index = statusOrder.indexOf(status as (typeof statusOrder)[number]);
+  return index === -1 ? 0 : index;
+}
+
 export default async function OrderDetailsPage({ params }: { params: Promise<{ orderNumber: string }> }) {
   const { orderNumber } = await params;
 
@@ -44,6 +55,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ o
   const payments = await getOrderPaymentSummary(String(order.id));
   const latestPayment = payments[0] ?? null;
   const hasReceipt = Boolean(payments.find((payment) => payment.status === 'successful' && payment.receipt_number));
+  const progressIndex = getProgressIndex(order.status);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -57,6 +69,32 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ o
         </span>
       </div>
 
+      <section className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Tracking</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Current status: {titleCaseStatus(order.status)}</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          {statusOrder.map((status, index) => {
+            const completed = progressIndex >= index;
+            const active = progressIndex === index;
+            return (
+              <div key={status} className={`rounded-2xl border p-4 ${completed ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-900/20' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950'}`}>
+                <p className={`text-sm font-semibold ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}>{titleCaseStatus(status)}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {index === 0 ? 'Order received' : index === 1 ? 'Packed for fulfillment' : index === 2 ? 'On the way' : 'Delivered to buyer'}
+                </p>
+              </div>
+            );
+          })}
+          {order.status === 'cancelled' ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300 sm:col-span-4">
+              This order was cancelled.
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h2 className="text-xl font-semibold">Items</h2>
@@ -66,7 +104,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ o
                 <div className="flex items-center gap-3">
                   <img src={item.products?.images?.[0] ?? ''} alt={item.products?.title ?? 'Product'} className="h-14 w-14 rounded-xl object-cover" />
                   <div>
-                    <p className="font-semibold">{item.products?.title ?? 'Product'}</p>
+                    <p className="font-semibold">{item.product_title ?? item.products?.title ?? 'Product'}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Qty {item.quantity}</p>
                   </div>
                 </div>
