@@ -1,1 +1,12 @@
-node_modules
+.next/
+node_modules/
+.env.local
+*.tsbuildinfo
+build-output.txt
+build-trace.txt
+.turbo/
+.cache/
+.eslintcache
+coverage/
+dist/
+out/
