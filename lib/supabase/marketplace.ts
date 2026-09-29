@@ -1,6 +1,7 @@
 import type { Database } from '@/types/supabase';
 import type { Category, ProductWithCategory, Review } from '@/types/marketplace';
 import { toSignedImageUrls } from '@/lib/product-images';
+import { isInventoryTracked, resolveStockQuantity } from '@/lib/inventory';
 import { createClient } from './server';
 
 export type ProductFilters = {
@@ -43,6 +44,7 @@ async function withTimeoutFallback<T>(promiseFactory: () => Promise<T>, fallback
 }
 
 function mapProduct(item: any, sellerNames?: Map<string, string | null>): ProductWithCategory {
+  const stockQuantity = resolveStockQuantity(item);
   return {
     id: item.id,
     seller_id: item.seller_id,
@@ -50,7 +52,10 @@ function mapProduct(item: any, sellerNames?: Map<string, string | null>): Produc
     title: item.title,
     description: item.description,
     price: Number(item.price),
-    quantity: item.quantity,
+    quantity: stockQuantity,
+    stock_quantity: stockQuantity,
+    low_stock_threshold: Number(item.low_stock_threshold ?? 5),
+    track_inventory: isInventoryTracked(item),
     images: item.images,
     condition: item.condition,
     location: item.location,
@@ -138,7 +143,7 @@ export async function getProducts(filters: ProductFilters = {}): Promise<Product
   const supabase = await createClient();
   let query = supabase
     .from('products')
-    .select('id, seller_id, category_id, title, description, price, quantity, images, condition, location, status, created_at, categories(name)')
+    .select('id, seller_id, category_id, title, description, price, quantity, stock_quantity, low_stock_threshold, track_inventory, images, condition, location, status, created_at, categories(name)')
     .eq('status', 'active')
     .order('created_at', { ascending: false });
 
@@ -177,7 +182,7 @@ export async function getProductsPaged(
   const start = (page - 1) * perPage;
   const end = start + perPage - 1;
 
-  const selectFields = 'id, seller_id, category_id, title, description, price, quantity, images, condition, location, status, created_at, categories(name)';
+  const selectFields = 'id, seller_id, category_id, title, description, price, quantity, stock_quantity, low_stock_threshold, track_inventory, images, condition, location, status, created_at, categories(name)';
   let query: any = supabase
     .from('products')
     .select(selectFields, { count: 'exact' });
@@ -220,7 +225,7 @@ export async function getProductsPaged(
   }
 
   if (filters.available) {
-    query = query.gte('quantity', 1);
+    query = query.or('track_inventory.eq.false,and(track_inventory.eq.true,stock_quantity.gt.0)');
   }
 
   const { data, error, count } = (await query.range(start, end)) as any;
@@ -351,7 +356,7 @@ export async function getProductById(id: string): Promise<ProductWithCategory | 
   try {
     const rel = await supabase
       .from('products')
-      .select('id, seller_id, category_id, title, description, price, quantity, images, condition, location, status, created_at, categories(name)')
+      .select('id, seller_id, category_id, title, description, price, quantity, stock_quantity, low_stock_threshold, track_inventory, images, condition, location, status, created_at, categories(name)')
       .eq('category_id', data.category_id)
       .neq('id', id)
       .eq('status', 'active')

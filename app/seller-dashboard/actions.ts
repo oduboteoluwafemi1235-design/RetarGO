@@ -27,6 +27,8 @@ const productSchema = z.object({
   categoryId: uuidLikeSchema,
   price: z.number().positive('Price must be greater than zero'),
   quantity: z.number().int('Quantity must be a whole number').min(0, 'Quantity cannot be negative'),
+  lowStockThreshold: z.number().int('Low stock threshold must be a whole number').min(0, 'Low stock threshold cannot be negative').default(5),
+  trackInventory: z.boolean().default(true),
   condition: z.enum(['new', 'used', 'refurbished']),
   location: z.string().trim().min(2, 'Location is required').max(120, 'Location is too long'),
   images: z.array(z.string().trim().url('Each image must be a valid URL')).min(1, 'Add at least one product image').max(8, 'Maximum 8 images'),
@@ -168,6 +170,7 @@ export async function createSellerProductAction(payload: z.infer<typeof productS
 
   const { client } = await getScopedDbClient();
   const imageUrls = normalizeImageUrls(parsed.data.images);
+  const shouldMarkSold = parsed.data.trackInventory && parsed.data.quantity <= 0;
 
   const { data, error } = await (client.from('products') as any)
     .insert({
@@ -177,10 +180,13 @@ export async function createSellerProductAction(payload: z.infer<typeof productS
       category_id: parsed.data.categoryId,
       price: parsed.data.price,
       quantity: parsed.data.quantity,
+      stock_quantity: parsed.data.quantity,
+      low_stock_threshold: parsed.data.lowStockThreshold,
+      track_inventory: parsed.data.trackInventory,
       condition: parsed.data.condition,
       location: parsed.data.location,
       images: imageUrls,
-      status: parsed.data.status,
+      status: shouldMarkSold ? 'sold' : parsed.data.status,
     })
     .select('id')
     .single();
@@ -207,6 +213,7 @@ export async function updateSellerProductAction(payload: z.infer<typeof productS
   const { client } = await getScopedDbClient();
   const nextImages = normalizeImageUrls(parsed.data.images);
   const removedImages = normalizeImageUrls(parsed.data.removedImages ?? []).filter((url) => !nextImages.includes(url));
+  const shouldMarkSold = parsed.data.trackInventory && parsed.data.quantity <= 0;
 
   const { error } = await (client.from('products') as any)
     .update({
@@ -215,10 +222,13 @@ export async function updateSellerProductAction(payload: z.infer<typeof productS
       category_id: parsed.data.categoryId,
       price: parsed.data.price,
       quantity: parsed.data.quantity,
+      stock_quantity: parsed.data.quantity,
+      low_stock_threshold: parsed.data.lowStockThreshold,
+      track_inventory: parsed.data.trackInventory,
       condition: parsed.data.condition,
       location: parsed.data.location,
       images: nextImages,
-      status: parsed.data.status,
+      status: shouldMarkSold ? 'sold' : parsed.data.status,
     })
     .eq('id', parsed.data.id)
     .eq('seller_id', seller.userId);

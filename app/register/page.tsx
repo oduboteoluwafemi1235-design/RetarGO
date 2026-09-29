@@ -57,7 +57,7 @@ export default function RegisterPage() {
         id: data.user.id,
         email: values.email,
         full_name: values.fullName,
-        role: 'customer',
+        role: 'seller',
         updated_at: new Date().toISOString(),
       });
       pushToast('Account created successfully', 'success');

@@ -5,9 +5,13 @@ import { Button } from './button';
 import { WishlistButton } from './wishlist-button';
 import type { ProductWithCategory } from '@/types/marketplace';
 import { getFirstImageUrl } from '@/lib/product-images';
+import { isLowStock, isOutOfStock, resolveStockQuantity } from '@/lib/inventory';
 
 export function ProductCard({ product }: { product: ProductWithCategory }) {
   const primaryImage = getFirstImageUrl(product.images);
+  const stock = resolveStockQuantity(product);
+  const outOfStock = isOutOfStock(product);
+  const lowStock = isLowStock(product);
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-soft dark:border-slate-800 dark:bg-slate-900">
@@ -28,9 +32,14 @@ export function ProductCard({ product }: { product: ProductWithCategory }) {
           <p className="text-sm font-medium text-brand-600">{product.category}</p>
           <h3 className="mt-1 text-lg font-semibold">{product.title}</h3>
           <p className="mt-2 line-clamp-3 text-sm text-slate-600 dark:text-slate-300">{product.description}</p>
-          {product.quantity <= 0 ? (
+          {outOfStock ? (
             <span className="mt-3 inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-              Out of stock
+              Out of Stock
+            </span>
+          ) : null}
+          {lowStock ? (
+            <span className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              Low Stock: {stock} left
             </span>
           ) : null}
         </div>

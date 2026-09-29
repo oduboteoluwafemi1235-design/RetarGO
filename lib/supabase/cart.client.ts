@@ -1,10 +1,15 @@
 import { createClient as createBrowserClient } from './client';
+import { isInventoryTracked, resolveStockQuantity } from '@/lib/inventory';
 
 export type CartProduct = {
   id: string;
   title: string;
   price: number;
   images: string[];
+  stock_quantity?: number;
+  low_stock_threshold?: number;
+  track_inventory?: boolean;
+  status?: string;
 };
 
 export type CartRow = {
@@ -33,7 +38,7 @@ export async function getCartClient() {
 
   const userId = user.data.user.id;
   const { data, error } = await (supabase.from('cart') as any)
-    .select('id, product_id, quantity, products(id, title, price, images)')
+    .select('id, product_id, quantity, products(id, title, price, images, status, stock_quantity, low_stock_threshold, track_inventory)')
     .eq('user_id', userId);
   if (error) throw new Error(error.message);
   return data ?? [];
@@ -53,14 +58,17 @@ export async function addToCartClient(productId: string, quantity = 1) {
   if (!user.data.user) throw new Error('Please sign in to add items to cart.');
 
   const { data: product, error: productError } = await (supabase.from('products') as any)
-    .select('id, status, quantity, title')
+    .select('id, status, quantity, stock_quantity, low_stock_threshold, track_inventory, title')
     .eq('id', productId)
     .maybeSingle();
 
   if (productError) throw new Error(productError.message);
   if (!product) throw new Error('Product no longer exists.');
   if (product.status !== 'active') throw new Error('This product is not available for purchase.');
-  if (Number(product.quantity ?? 0) <= 0) throw new Error('This product is out of stock.');
+
+  const tracked = isInventoryTracked(product);
+  const stockQuantity = resolveStockQuantity(product);
+  if (tracked && stockQuantity <= 0) throw new Error('This product is out of stock.');
 
   const userId = user.data.user.id;
   const { data: existing, error: existingError } = await (supabase.from('cart') as any)
@@ -72,14 +80,14 @@ export async function addToCartClient(productId: string, quantity = 1) {
 
   if (existing?.id) {
     const nextQuantity = Number(existing.quantity ?? 0) + quantity;
-    if (nextQuantity > Number(product.quantity ?? 0)) {
-      throw new Error('Not enough stock available for this quantity.');
+    if (tracked && nextQuantity > stockQuantity) {
+      throw new Error(`Only ${stockQuantity} items left in stock.`);
     }
     const { data, error } = await (supabase.from('cart') as any)
       .update({ quantity: nextQuantity })
       .eq('id', existing.id)
       .eq('user_id', userId)
-      .select('id, product_id, quantity, products(id, title, price, images)')
+      .select('id, product_id, quantity, products(id, title, price, images, status, stock_quantity, low_stock_threshold, track_inventory)')
       .single();
     if (error) throw new Error(error.message);
     emitCartChanged();
@@ -88,7 +96,7 @@ export async function addToCartClient(productId: string, quantity = 1) {
 
   const { data, error } = await (supabase.from('cart') as any)
     .insert({ user_id: userId, product_id: productId, quantity })
-    .select('id, product_id, quantity, products(id, title, price, images)')
+    .select('id, product_id, quantity, products(id, title, price, images, status, stock_quantity, low_stock_threshold, track_inventory)')
     .single();
   if (error) throw new Error(error.message);
   emitCartChanged();
@@ -100,10 +108,32 @@ export async function updateCartItemClient(id: string | number, quantity: number
   const user = await supabase.auth.getUser();
   if (!user.data.user) throw new Error('Please sign in to update cart items.');
 
+  const { data: existing, error: existingError } = await (supabase.from('cart') as any)
+    .select('id, product_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (!existing?.product_id) throw new Error('Cart item no longer exists.');
+
+  const { data: product, error: productError } = await (supabase.from('products') as any)
+    .select('id, status, quantity, stock_quantity, low_stock_threshold, track_inventory')
+    .eq('id', existing.product_id)
+    .maybeSingle();
+  if (productError) throw new Error(productError.message);
+  if (!product) throw new Error('Product no longer exists.');
+  if (product.status !== 'active') throw new Error('This product is not available for purchase.');
+
+  if (isInventoryTracked(product)) {
+    const stockQuantity = resolveStockQuantity(product);
+    if (quantity > stockQuantity) {
+      throw new Error(`Only ${stockQuantity} items left in stock.`);
+    }
+  }
+
   const { data, error } = await (supabase.from('cart') as any)
     .update({ quantity })
     .eq('id', id)
-    .select('id, product_id, quantity, products(id, title, price, images)');
+    .select('id, product_id, quantity, products(id, title, price, images, status, stock_quantity, low_stock_threshold, track_inventory)');
   if (error) throw new Error(error.message);
   emitCartChanged();
   return data ?? [];

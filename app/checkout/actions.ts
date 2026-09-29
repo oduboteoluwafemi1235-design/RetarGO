@@ -12,6 +12,7 @@ import {
 } from '@/lib/supabase/orders.server';
 import { createPaymentAttempt, createPaymentReference, getLatestPaymentForOrder } from '@/lib/payments/payments.server';
 import { initializeProviderPayment, type PaymentProvider } from '@/lib/payments/providers.server';
+import { isInventoryTracked, resolveStockQuantity } from '@/lib/inventory';
 
 function isTestPaymentMode() {
   return process.env.RETARGO_ENABLE_TEST_PAYMENTS === 'true';
@@ -102,7 +103,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
 
     const { data: cartRows, error: cartError } = await supabase
       .from('cart')
-      .select('id, quantity, products(price, quantity, seller_id, title)')
+      .select('id, quantity, products(price, quantity, stock_quantity, low_stock_threshold, track_inventory, seller_id, title)')
       .eq('user_id', user.id);
 
     if (cartError) {
@@ -118,9 +119,14 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       return { ok: false, error: 'Checkout supports one seller per order. Remove items from other sellers before continuing.' };
     }
 
-    const insufficientStockItem = (cartRows as Array<{ quantity: number; products: { quantity: number; title: string } | null }>).find((row) => Number(row.quantity ?? 0) > Number(row.products?.quantity ?? 0));
+    const insufficientStockItem = (cartRows as Array<{ quantity: number; products: { quantity: number; stock_quantity?: number; track_inventory?: boolean; title: string } | null }>).find((row) => {
+      const product = row.products;
+      if (!product || !isInventoryTracked(product)) return false;
+      return Number(row.quantity ?? 0) > resolveStockQuantity(product);
+    });
     if (insufficientStockItem) {
-      return { ok: false, error: `Insufficient stock for ${insufficientStockItem.products?.title ?? 'one of the items'}.` };
+      const availableStock = resolveStockQuantity(insufficientStockItem.products ?? {});
+      return { ok: false, error: `Only ${availableStock} items left in stock.` };
     }
 
     const totals = calculateCheckoutTotals(cartRows as Array<{ quantity: number; products: { price: number } | null }>);
@@ -154,16 +160,36 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       shippingAddressId = String(createdAddress.id);
     }
 
-    const orderNumber = await getNextOrderNumber();
-    const createdOrder = await createOrderFromCart(user.id, {
-      orderNumber,
-      shippingAddressId,
-      contactEmail: data.contactEmail,
-      contactPhone: data.contactPhone,
-      couponCode: data.couponCode ? data.couponCode : null,
-      checkoutToken: data.checkoutToken,
-      totals,
-    });
+    let createdOrder: Awaited<ReturnType<typeof createOrderFromCart>> | null = null;
+    let lastOrderError: unknown = null;
+
+    // RLS can make sequence-based order number reads stale, so retry on unique collisions.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const orderNumber = await getNextOrderNumber();
+      try {
+        createdOrder = await createOrderFromCart(user.id, {
+          orderNumber,
+          shippingAddressId,
+          contactEmail: data.contactEmail,
+          contactPhone: data.contactPhone,
+          couponCode: data.couponCode ? data.couponCode : null,
+          checkoutToken: data.checkoutToken,
+          totals,
+        });
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : '';
+        const isOrderNumberCollision = message.includes('idx_orders_order_number') || message.includes('orders_order_number_key');
+        if (!isOrderNumberCollision || attempt === 2) {
+          throw error;
+        }
+        lastOrderError = error;
+      }
+    }
+
+    if (!createdOrder) {
+      throw (lastOrderError instanceof Error ? lastOrderError : new Error('Unable to create order right now.'));
+    }
 
     const provider = data.paymentProvider as PaymentProvider;
     const paymentReference = createPaymentReference(provider, createdOrder.order_number);

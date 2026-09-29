@@ -17,6 +17,9 @@ export type Product = {
   description: string;
   price: number;
   quantity: number;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  track_inventory: boolean;
   images: string[];
   condition: ProductCondition;
   location: string;

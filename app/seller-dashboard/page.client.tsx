@@ -7,6 +7,7 @@ import { Button } from '@/components/button';
 import { useToast } from '@/components/toast-provider';
 import { formatCurrency } from '@/lib/checkout';
 import { getFirstImageUrl } from '@/lib/product-images';
+import { isLowStock, isOutOfStock } from '@/lib/inventory';
 import type { SellerSection } from './data';
 import {
   createSellerProductAction,
@@ -32,6 +33,9 @@ type SellerProduct = {
   categoryName: string;
   price: number;
   quantity: number;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  trackInventory: boolean;
   images: string[];
   condition: 'new' | 'used' | 'refurbished';
   location: string;
@@ -99,6 +103,8 @@ type ProductDraft = {
   categoryId: string;
   price: string;
   quantity: string;
+  lowStockThreshold: string;
+  trackInventory: boolean;
   condition: 'new' | 'used' | 'refurbished';
   location: string;
   status: 'active' | 'pending' | 'sold';
@@ -127,6 +133,8 @@ const emptyProductDraft = (defaultCategoryId: string): ProductDraft => ({
   categoryId: defaultCategoryId,
   price: '',
   quantity: '1',
+  lowStockThreshold: '5',
+  trackInventory: true,
   condition: 'new',
   location: '',
   status: 'pending',
@@ -220,15 +228,47 @@ export default function SellerDashboardClient({
     const activeListings = products.filter((product) => product.status === 'active').length;
     const pendingOrders = orders.filter((order) => order.status === 'pending' || order.status === 'processing').length;
     const completedOrders = orders.filter((order) => order.status === 'delivered').length;
+    const lowStockCount = products.filter((product) => isLowStock({
+      stock_quantity: product.stockQuantity,
+      low_stock_threshold: product.lowStockThreshold,
+      track_inventory: product.trackInventory,
+    })).length;
+    const outOfStockCount = products.filter((product) => isOutOfStock({
+      stock_quantity: product.stockQuantity,
+      track_inventory: product.trackInventory,
+    })).length;
 
     return {
       totalProducts,
       activeListings,
       pendingOrders,
       completedOrders,
+      lowStockCount,
+      outOfStockCount,
       totalRevenue: analytics.totalRevenue,
     };
   }, [products, orders, analytics.totalRevenue]);
+
+  const lowStockList = useMemo(
+    () => products.filter((product) =>
+      isLowStock({
+        stock_quantity: product.stockQuantity,
+        low_stock_threshold: product.lowStockThreshold,
+        track_inventory: product.trackInventory,
+      })
+    ),
+    [products]
+  );
+
+  const outOfStockList = useMemo(
+    () => products.filter((product) =>
+      isOutOfStock({
+        stock_quantity: product.stockQuantity,
+        track_inventory: product.trackInventory,
+      })
+    ),
+    [products]
+  );
 
   const filteredProducts = useMemo(() => {
     const search = productFilter.trim().toLowerCase();
@@ -298,7 +338,9 @@ export default function SellerDashboardClient({
       description: product.description,
       categoryId: product.categoryId,
       price: String(product.price),
-      quantity: String(product.quantity),
+      quantity: String(product.stockQuantity),
+      lowStockThreshold: String(product.lowStockThreshold),
+      trackInventory: product.trackInventory,
       condition: product.condition,
       location: product.location,
       status: product.status,
@@ -373,6 +415,7 @@ export default function SellerDashboardClient({
   const handleSaveProduct = async () => {
     const parsedPrice = Number(productDraft.price);
     const parsedQuantity = Number(productDraft.quantity);
+    const parsedLowStockThreshold = Number(productDraft.lowStockThreshold);
 
     if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
       pushToast('Enter a valid product price.', 'error');
@@ -381,6 +424,11 @@ export default function SellerDashboardClient({
 
     if (!Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
       pushToast('Enter a valid stock quantity.', 'error');
+      return;
+    }
+
+    if (!Number.isInteger(parsedLowStockThreshold) || parsedLowStockThreshold < 0) {
+      pushToast('Enter a valid low stock threshold.', 'error');
       return;
     }
 
@@ -393,6 +441,8 @@ export default function SellerDashboardClient({
       categoryId: productDraft.categoryId,
       price: parsedPrice,
       quantity: parsedQuantity,
+      lowStockThreshold: parsedLowStockThreshold,
+      trackInventory: productDraft.trackInventory,
       condition: productDraft.condition,
       location: productDraft.location,
       status: productDraft.status,
@@ -539,7 +589,7 @@ export default function SellerDashboardClient({
 
       {activeSection === 'overview' ? (
         <section className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
             <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <p className="text-sm text-slate-500 dark:text-slate-400">Total products</p>
               <p className="mt-2 text-3xl font-semibold">{dashboardOverview.totalProducts}</p>
@@ -556,11 +606,50 @@ export default function SellerDashboardClient({
               <p className="text-sm text-slate-500 dark:text-slate-400">Completed orders</p>
               <p className="mt-2 text-3xl font-semibold">{dashboardOverview.completedOrders}</p>
             </article>
+            <article className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-700/50 dark:bg-amber-900/20">
+              <p className="text-sm text-amber-700 dark:text-amber-300">Low-stock products</p>
+              <p className="mt-2 text-3xl font-semibold text-amber-800 dark:text-amber-200">{dashboardOverview.lowStockCount}</p>
+            </article>
+            <article className="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm dark:border-rose-700/50 dark:bg-rose-900/20">
+              <p className="text-sm text-rose-700 dark:text-rose-300">Out-of-stock products</p>
+              <p className="mt-2 text-3xl font-semibold text-rose-800 dark:text-rose-200">{dashboardOverview.outOfStockCount}</p>
+            </article>
             <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <p className="text-sm text-slate-500 dark:text-slate-400">Total revenue</p>
               <p className="mt-2 text-3xl font-semibold">{formatCurrency(dashboardOverview.totalRevenue)}</p>
             </article>
           </div>
+
+          <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="text-xl font-semibold">Inventory alerts</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Products that need stock attention right now.</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700/50 dark:bg-amber-900/20">
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">Low stock</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {lowStockList.length === 0 ? <p className="text-amber-700/80 dark:text-amber-300/80">No low-stock products.</p> : null}
+                  {lowStockList.slice(0, 6).map((product) => (
+                    <div key={product.id} className="flex items-center justify-between">
+                      <span className="line-clamp-1">{product.title}</span>
+                      <span className="font-semibold">{product.stockQuantity} left</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-700/50 dark:bg-rose-900/20">
+                <p className="text-sm font-semibold text-rose-800 dark:text-rose-200">Out of stock</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {outOfStockList.length === 0 ? <p className="text-rose-700/80 dark:text-rose-300/80">No out-of-stock products.</p> : null}
+                  {outOfStockList.slice(0, 6).map((product) => (
+                    <div key={product.id} className="flex items-center justify-between">
+                      <span className="line-clamp-1">{product.title}</span>
+                      <span className="font-semibold">0 left</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
 
           <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="text-xl font-semibold">Recent sales</h2>
@@ -656,15 +745,23 @@ export default function SellerDashboardClient({
                     <div>
                       <p className="text-lg font-semibold">{product.title}</p>
                       <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{product.categoryName} - {formatCurrency(product.price)}</p>
-                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Stock: {product.quantity} | {titleCase(product.condition)} | {product.location}</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Stock: {product.stockQuantity} | {titleCase(product.condition)} | {product.location}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {product.trackInventory ? `Tracking on • Low-stock threshold ${product.lowStockThreshold}` : 'Tracking off'}
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${listingStatusClass(product.status)}`}>
                         {titleCase(product.status)}
                       </span>
-                      {product.quantity === 0 ? (
+                      {isOutOfStock({ stock_quantity: product.stockQuantity, track_inventory: product.trackInventory }) ? (
                         <span className="inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
                           Out of stock
+                        </span>
+                      ) : null}
+                      {isLowStock({ stock_quantity: product.stockQuantity, low_stock_threshold: product.lowStockThreshold, track_inventory: product.trackInventory }) ? (
+                        <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Low stock
                         </span>
                       ) : null}
                     </div>
@@ -718,6 +815,25 @@ export default function SellerDashboardClient({
               <div className="grid gap-3 sm:grid-cols-2">
                 <input className="w-full rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950" value={productDraft.price} onChange={(event) => setProductDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Price" type="number" min="0" step="0.01" />
                 <input className="w-full rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950" value={productDraft.quantity} onChange={(event) => setProductDraft((current) => ({ ...current, quantity: event.target.value }))} placeholder="Stock quantity" type="number" min="0" step="1" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950"
+                  value={productDraft.lowStockThreshold}
+                  onChange={(event) => setProductDraft((current) => ({ ...current, lowStockThreshold: event.target.value }))}
+                  placeholder="Low-stock threshold"
+                  type="number"
+                  min="0"
+                  step="1"
+                />
+                <label className="flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+                  <input
+                    type="checkbox"
+                    checked={productDraft.trackInventory}
+                    onChange={(event) => setProductDraft((current) => ({ ...current, trackInventory: event.target.checked }))}
+                  />
+                  Track inventory
+                </label>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <select className="w-full rounded-2xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-950" value={productDraft.condition} onChange={(event) => setProductDraft((current) => ({ ...current, condition: event.target.value as ProductDraft['condition'] }))}>

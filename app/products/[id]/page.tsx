@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 import { getProductById } from '@/lib/supabase/marketplace';
 import { Button } from '@/components/button';
 import { AddToCartButton } from '@/components/add-to-cart-button';
+import { BuyNowButton } from '@/components/buy-now-button';
 import { getFirstImageUrl, normalizeImageList } from '@/lib/product-images';
+import { getStockStatusLabel, isInventoryTracked, resolveLowStockThreshold, resolveStockQuantity } from '@/lib/inventory';
 
 export default async function ProductDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,6 +19,12 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
   const reviews = (product as any)._reviews ?? [];
   const productImages = normalizeImageList(product.images);
   const primaryImage = getFirstImageUrl(productImages);
+  const stockQuantity = resolveStockQuantity(product);
+  const lowStockThreshold = resolveLowStockThreshold(product);
+  const tracked = isInventoryTracked(product);
+  const stockStatus = getStockStatusLabel(product);
+  const outOfStock = stockStatus === 'out';
+  const lowStock = stockStatus === 'low';
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -42,13 +50,34 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-brand-600">Price</p>
               <p className="mt-2 text-4xl font-semibold text-slate-900 dark:text-white">₦{product.price.toLocaleString()}</p>
               <p className="mt-1 text-sm text-slate-500">{product.seller_name ?? 'Marketplace seller'}</p>
-              {product.quantity <= 0 ? (
-                <p className="mt-3 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-                  Out of stock
-                </p>
-              ) : null}
+              <div className="mt-3 space-y-2">
+                {tracked ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Stock: {stockQuantity}</p>
+                ) : (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Inventory tracking disabled</p>
+                )}
+                {outOfStock ? (
+                  <p className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                    Out of Stock
+                  </p>
+                ) : null}
+                {lowStock ? (
+                  <p className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    Only {stockQuantity} left in stock.
+                  </p>
+                ) : null}
+                {!outOfStock && !lowStock ? (
+                  <p className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                    In Stock
+                  </p>
+                ) : null}
+                {tracked ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Low-stock alert threshold: {lowStockThreshold}</p>
+                ) : null}
+              </div>
               <div className="mt-6 grid gap-3">
-                <AddToCartButton productId={String(product.id)} outOfStock={product.quantity <= 0} />
+                <AddToCartButton productId={String(product.id)} outOfStock={outOfStock} />
+                <BuyNowButton productId={String(product.id)} outOfStock={outOfStock} />
                 <Button variant="secondary" className="w-full" asChild>
                   <Link href="/cart">View cart</Link>
                 </Button>
@@ -81,7 +110,7 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Quantity</p>
-                <p className="mt-1 text-base font-medium">{product.quantity}</p>
+                <p className="mt-1 text-base font-medium">{stockQuantity}</p>
               </div>
             </div>
           </div>

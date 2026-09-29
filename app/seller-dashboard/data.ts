@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { toSignedImageUrl, toSignedImageUrls } from '@/lib/product-images';
+import { isLowStock, isOutOfStock, resolveLowStockThreshold, resolveStockQuantity } from '@/lib/inventory';
 
 export type SellerSection = 'overview' | 'products' | 'orders' | 'analytics' | 'profile';
 
@@ -13,6 +14,9 @@ export type SellerDashboardProduct = {
   categoryName: string;
   price: number;
   quantity: number;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  trackInventory: boolean;
   images: string[];
   condition: 'new' | 'used' | 'refurbished';
   location: string;
@@ -56,6 +60,8 @@ export type SellerDashboardData = {
   initialProducts: SellerDashboardProduct[];
   initialOrders: SellerOrder[];
   categories: Array<{ id: string; name: string }>;
+  lowStockProducts: SellerDashboardProduct[];
+  outOfStockProducts: SellerDashboardProduct[];
   analytics: SellerAnalytics;
   usingPrivilegedClient: boolean;
   profile: {
@@ -168,7 +174,7 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
   const [categoriesResult, productsResult, ordersResult] = await Promise.all([
     supabase.from('categories').select('id, name').order('name'),
     (dataClient.from('products') as any)
-      .select('id, title, description, category_id, price, quantity, images, condition, location, status, created_at, categories(name)')
+      .select('id, title, description, category_id, price, quantity, stock_quantity, low_stock_threshold, track_inventory, images, condition, location, status, created_at, categories(name)')
       .eq('seller_id', user.id)
       .order('created_at', { ascending: false }),
     (dataClient.from('orders') as any)
@@ -186,6 +192,9 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
     category_id: string;
     price: number;
     quantity: number;
+    stock_quantity: number | null;
+    low_stock_threshold: number | null;
+    track_inventory: boolean | null;
     images: string[];
     condition: 'new' | 'used' | 'refurbished';
     location: string;
@@ -194,20 +203,37 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
     categories?: { name?: string | null } | null;
   }>;
 
-  const products: SellerDashboardProduct[] = await Promise.all(productRows.map(async (row) => ({
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    categoryId: row.category_id,
-    categoryName: row.categories?.name ?? 'Uncategorized',
-    price: toNumber(row.price),
-    quantity: Number(row.quantity ?? 0),
-    images: await toSignedImageUrls(supabase, row.images),
-    condition: row.condition,
-    location: row.location,
-    status: row.status,
-    createdAt: row.created_at,
-  })));
+  const products: SellerDashboardProduct[] = await Promise.all(productRows.map(async (row) => {
+    const stockQuantity = resolveStockQuantity(row);
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      categoryId: row.category_id,
+      categoryName: row.categories?.name ?? 'Uncategorized',
+      price: toNumber(row.price),
+      quantity: stockQuantity,
+      stockQuantity,
+      lowStockThreshold: resolveLowStockThreshold(row),
+      trackInventory: row.track_inventory !== false,
+      images: await toSignedImageUrls(supabase, row.images),
+      condition: row.condition,
+      location: row.location,
+      status: row.status,
+      createdAt: row.created_at,
+    };
+  }));
+
+  const lowStockProducts = products.filter((product) => isLowStock({
+    stock_quantity: product.stockQuantity,
+    low_stock_threshold: product.lowStockThreshold,
+    track_inventory: product.trackInventory,
+  }));
+
+  const outOfStockProducts = products.filter((product) => isOutOfStock({
+    stock_quantity: product.stockQuantity,
+    track_inventory: product.trackInventory,
+  }));
 
   const orderRows = (ordersResult.data ?? []) as Array<{
     id: string;
@@ -315,6 +341,8 @@ export async function loadSellerDashboardData(): Promise<SellerDashboardData> {
     initialProducts: products,
     initialOrders: orders,
     categories: categoryRows,
+    lowStockProducts,
+    outOfStockProducts,
     analytics,
     usingPrivilegedClient,
     profile: {

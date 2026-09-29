@@ -26,6 +26,9 @@ create table if not exists public.products (
   description text not null,
   price numeric not null,
   quantity integer not null default 1,
+  stock_quantity integer not null default 0 check (stock_quantity >= 0),
+  low_stock_threshold integer not null default 5 check (low_stock_threshold >= 0),
+  track_inventory boolean not null default true,
   images text[] not null,
   condition text not null check (condition in ('new', 'used', 'refurbished')),
   location text not null,
@@ -136,6 +139,25 @@ alter table public.categories add column if not exists created_at timestamptz de
 alter table public.products add column if not exists seller_id uuid;
 alter table public.products add column if not exists category_id uuid;
 alter table public.products add column if not exists created_at timestamptz default now();
+alter table public.products add column if not exists stock_quantity integer;
+alter table public.products add column if not exists low_stock_threshold integer;
+alter table public.products add column if not exists track_inventory boolean;
+
+update public.products set stock_quantity = coalesce(stock_quantity, quantity, 0) where stock_quantity is null;
+update public.products set low_stock_threshold = coalesce(low_stock_threshold, 5) where low_stock_threshold is null;
+update public.products set track_inventory = coalesce(track_inventory, true) where track_inventory is null;
+
+alter table public.products alter column stock_quantity set default 0;
+alter table public.products alter column stock_quantity set not null;
+alter table public.products alter column low_stock_threshold set default 5;
+alter table public.products alter column low_stock_threshold set not null;
+alter table public.products alter column track_inventory set default true;
+alter table public.products alter column track_inventory set not null;
+
+alter table public.products drop constraint if exists products_stock_quantity_check;
+alter table public.products add constraint products_stock_quantity_check check (stock_quantity >= 0);
+alter table public.products drop constraint if exists products_low_stock_threshold_check;
+alter table public.products add constraint products_low_stock_threshold_check check (low_stock_threshold >= 0);
 
 alter table public.wishlist add column if not exists user_id uuid;
 alter table public.wishlist add column if not exists product_id uuid;
@@ -716,8 +738,8 @@ begin
     end if;
   end if;
 
-  select count(distinct p.seller_id), min(p.seller_id)
-  into v_seller_count, v_first_seller
+  select count(distinct p.seller_id)
+  into v_seller_count
   from public.cart c
   join public.products p on p.id = c.product_id
   where c.user_id = buyer;
@@ -729,6 +751,13 @@ begin
   if v_seller_count > 1 then
     raise exception 'Checkout supports products from one seller at a time.';
   end if;
+
+  select p.seller_id
+  into v_first_seller
+  from public.cart c
+  join public.products p on p.id = c.product_id
+  where c.user_id = buyer
+  limit 1;
 
   select coalesce(sum(c.quantity * p.price), 0)
   into v_cart_subtotal
@@ -749,20 +778,29 @@ begin
   end if;
 
   for v_cart_item in
-    select c.product_id, c.quantity, p.price, p.title, p.quantity as stock_quantity
+    select
+      c.product_id,
+      c.quantity,
+      p.price,
+      p.title,
+      coalesce(p.stock_quantity, p.quantity, 0) as stock_quantity,
+      coalesce(p.track_inventory, true) as track_inventory
     from public.cart c
     join public.products p on p.id = c.product_id
     where c.user_id = buyer
     for update of p
   loop
-    if v_cart_item.quantity > v_cart_item.stock_quantity then
-      raise exception 'Insufficient stock for %.', v_cart_item.title;
+    if v_cart_item.track_inventory and v_cart_item.quantity > v_cart_item.stock_quantity then
+      raise exception 'Only % items left in stock.', v_cart_item.stock_quantity;
     end if;
 
-    update public.products
-    set quantity = quantity - v_cart_item.quantity,
-        status = case when quantity - v_cart_item.quantity <= 0 then 'sold' else status end
-    where id = v_cart_item.product_id;
+    if v_cart_item.track_inventory then
+      update public.products
+      set stock_quantity = greatest(v_cart_item.stock_quantity - v_cart_item.quantity, 0),
+          quantity = greatest(v_cart_item.stock_quantity - v_cart_item.quantity, 0),
+          status = case when greatest(v_cart_item.stock_quantity - v_cart_item.quantity, 0) <= 0 then 'sold' else status end
+      where id = v_cart_item.product_id;
+    end if;
   end loop;
 
   insert into public.orders (

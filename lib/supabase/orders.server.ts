@@ -1,5 +1,6 @@
 import { createClient as createServerClient } from './server';
 import type { Database } from '@/types/supabase';
+import { isInventoryTracked, resolveStockQuantity } from '@/lib/inventory';
 
 export type AddressRow = Database['public']['Tables']['addresses']['Row'];
 export type AddressInsert = Database['public']['Tables']['addresses']['Insert'];
@@ -161,50 +162,20 @@ export async function getOrderByCheckoutToken(
 }
 
 export async function getNextOrderNumber() {
-  const supabase = await createServerClient();
   const today = new Date();
   const prefix = `RTG-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-  const { data, error } = await (supabase
-    .from('orders')
-    .select('order_number')
-    .like('order_number', `${prefix}-%`)
-    .order('order_number', { ascending: false })
-    .limit(1)) as { data: Array<{ order_number: string }> | null; error: { message: string } | null };
-
-  if (error) throw new Error(error.message);
-  const lastOrder = data?.[0]?.order_number;
-  const nextSequence = lastOrder ? Number(lastOrder.split('-').pop() ?? '0') + 1 : 1;
-  return `${prefix}-${String(nextSequence).padStart(6, '0')}`;
+  const timePart = `${String(today.getHours()).padStart(2, '0')}${String(today.getMinutes()).padStart(2, '0')}${String(today.getSeconds()).padStart(2, '0')}${String(today.getMilliseconds()).padStart(3, '0')}`;
+  const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `${prefix}-${timePart}${randomPart}`;
 }
 
 export async function createOrderFromCart(userId: string, input: CreateOrderInput): Promise<CreatedOrderResult> {
   const supabase = await createServerClient();
-  const rpcResult = await (supabase as any).rpc('create_order_transaction', {
-    buyer: userId,
-    p_order_number: input.orderNumber,
-    p_shipping_address_id: input.shippingAddressId,
-    p_contact_email: input.contactEmail,
-    p_contact_phone: input.contactPhone,
-    p_subtotal: input.totals.subtotal,
-    p_shipping_cost: input.totals.shippingCost,
-    p_tax_amount: input.totals.taxAmount,
-    p_total: input.totals.total,
-    p_coupon_code: input.couponCode,
-    p_checkout_token: input.checkoutToken,
-  });
-
-  if (!rpcResult.error && rpcResult.data?.length) {
-    return rpcResult.data[0] as CreatedOrderResult;
-  }
-
-  const rpcErrorMessage = `${rpcResult.error?.message ?? ''}`.toLowerCase();
-  const shouldFallback = rpcErrorMessage.includes('order_items') || rpcErrorMessage.includes('column "total"') || rpcErrorMessage.includes('null value in column');
-  if (!shouldFallback) {
-    throw new Error(rpcResult.error?.message ?? 'Unable to create order.');
-  }
+  // Use explicit application-side order creation to guarantee inventory updates
+  // across partially migrated database functions.
 
   const { data: cartRows, error: cartError } = await (supabase.from('cart') as any)
-    .select('product_id, quantity, products(id, seller_id, price, title, quantity)')
+    .select('product_id, quantity, products(id, seller_id, price, title, quantity, stock_quantity, low_stock_threshold, track_inventory, status)')
     .eq('user_id', userId);
 
   if (cartError) throw new Error(cartError.message);
@@ -215,31 +186,33 @@ export async function createOrderFromCart(userId: string, input: CreateOrderInpu
     throw new Error('Checkout supports products from one seller at a time. Please remove items from other sellers.');
   }
 
-  const insufficientStockItem = cartRows.find((row: any) => Number(row.quantity ?? 0) > Number(row.products?.quantity ?? 0));
+  const insufficientStockItem = cartRows.find((row: any) => {
+    if (!row.products || !isInventoryTracked(row.products)) return false;
+    return Number(row.quantity ?? 0) > resolveStockQuantity(row.products);
+  });
   if (insufficientStockItem) {
-    throw new Error(`Insufficient stock for ${insufficientStockItem.products?.title ?? 'one of the items'}.`);
+    throw new Error(`Only ${resolveStockQuantity(insufficientStockItem.products ?? {})} items left in stock.`);
   }
 
   for (const row of cartRows as any[]) {
     const quantity = Number(row.quantity ?? 0);
-    const stockQuantity = Number(row.products?.quantity ?? 0);
+    const stockQuantity = resolveStockQuantity(row.products ?? {});
+    const tracked = isInventoryTracked(row.products ?? {});
 
-    if (quantity > stockQuantity) {
-      throw new Error(`Insufficient stock for ${row.products?.title ?? 'one of the items'}.`);
+    if (tracked && quantity > stockQuantity) {
+      throw new Error(`Only ${stockQuantity} items left in stock.`);
     }
 
-    const nextQuantity = stockQuantity - quantity;
-    const updatePayload: Record<string, unknown> = { quantity: nextQuantity };
-    if (nextQuantity <= 0) {
-      updatePayload.status = 'sold';
-    }
+    if (tracked) {
+      const { error: stockUpdateError } = await (supabase as any)
+        .rpc('decrement_product_inventory', {
+          p_product_id: row.product_id,
+          p_quantity: quantity,
+        });
 
-    const { error: stockUpdateError } = await (supabase.from('products') as any)
-      .update(updatePayload)
-      .eq('id', row.product_id);
-
-    if (stockUpdateError) {
-      throw new Error(stockUpdateError.message);
+      if (stockUpdateError) {
+        throw new Error(stockUpdateError.message);
+      }
     }
   }
 
@@ -271,6 +244,7 @@ export async function createOrderFromCart(userId: string, input: CreateOrderInpu
     return {
       order_id: insertedOrder.id,
       product_id: row.product_id,
+      product_title: row.products?.title ?? 'Product',
       quantity,
       unit_price: unitPrice,
       total: unitPrice * quantity,
@@ -278,7 +252,23 @@ export async function createOrderFromCart(userId: string, input: CreateOrderInpu
   });
 
   const { error: insertItemsError } = await (supabase.from('order_items') as any).insert(orderItemsPayload);
-  if (insertItemsError) throw new Error(insertItemsError.message);
+  if (insertItemsError) {
+    const missingProductTitleColumn = insertItemsError.message.toLowerCase().includes('product_title') && insertItemsError.message.toLowerCase().includes('does not exist');
+
+    if (!missingProductTitleColumn) {
+      throw new Error(insertItemsError.message);
+    }
+
+    // Compatibility fallback for legacy databases that do not have order_items.product_title yet.
+    const legacyOrderItemsPayload = orderItemsPayload.map((item: Record<string, unknown>) => {
+      const { product_title, ...rest } = item;
+      return rest;
+    });
+    const { error: legacyInsertItemsError } = await (supabase.from('order_items') as any).insert(legacyOrderItemsPayload);
+    if (legacyInsertItemsError) {
+      throw new Error(legacyInsertItemsError.message);
+    }
+  }
 
   const { error: clearCartError } = await (supabase.from('cart') as any).delete().eq('user_id', userId);
   if (clearCartError) throw new Error(clearCartError.message);
