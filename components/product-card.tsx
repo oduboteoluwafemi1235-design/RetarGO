@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { Button } from './button';
 import { WishlistButton } from './wishlist-button';
 import type { ProductWithCategory } from '@/types/marketplace';
 import { getFirstImageUrl } from '@/lib/product-images';
@@ -14,10 +13,14 @@ export function ProductCard({ product }: { product: ProductWithCategory }) {
   const lowStock = isLowStock(product);
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-soft dark:border-slate-800 dark:bg-slate-900">
-      <div className="h-48 overflow-hidden bg-slate-100 dark:bg-slate-800">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-soft dark:border-slate-800 dark:bg-slate-900">
+      <div className="h-52 overflow-hidden bg-slate-100 dark:bg-slate-800">
         {primaryImage ? (
-          <img src={primaryImage} alt={product.title} className="h-full w-full object-cover" />
+          <img
+            src={primaryImage}
+            alt={product.title}
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-5xl text-slate-500">📦</div>
         )}
@@ -29,7 +32,7 @@ export function ProductCard({ product }: { product: ProductWithCategory }) {
 
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div>
-          <p className="text-sm font-medium text-brand-600">{product.category}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">{product.category}</p>
           <h3 className="mt-1 text-lg font-semibold">{product.title}</h3>
           <p className="mt-2 line-clamp-3 text-sm text-slate-600 dark:text-slate-300">{product.description}</p>
           {outOfStock ? (
@@ -46,16 +49,23 @@ export function ProductCard({ product }: { product: ProductWithCategory }) {
 
         <div className="mt-auto flex items-center justify-between gap-4">
           <div>
-              <div className="flex items-baseline gap-3">
-                <p className="text-xl font-semibold">₦{product.price.toLocaleString()}</p>
-                {product.discount ? <span className="text-sm text-red-500">-{product.discount}%</span> : null}
-              </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{product.location}</p>
-              <p className="text-xs text-slate-400">{product.seller_name ?? 'Marketplace seller'}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xl font-bold">₦{product.price.toLocaleString()}</p>
+              {product.discount ? (
+                <span className="rounded-full bg-coral-100 px-2 py-0.5 text-xs font-semibold text-coral-700">
+                  -{product.discount}%
+                </span>
+              ) : null}
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{product.location}</p>
+            <p className="text-xs text-slate-400">{product.seller_name ?? 'Marketplace seller'}</p>
           </div>
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={`/products/${product.id}`}>View</Link>
-          </Button>
+          <Link
+            href={`/products/${product.id}`}
+            className="inline-flex items-center rounded-full bg-coral-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-coral-700"
+          >
+            View
+          </Link>
         </div>
       </div>
     </article>
