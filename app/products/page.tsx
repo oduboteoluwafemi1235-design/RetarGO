@@ -62,7 +62,7 @@ async function ProductList({ searchParams }: ResolvedProductsPageProps) {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      <div className="grid gap-6">
         <ProductFilters
           categories={categories}
           initialQuery={searchParams?.q ?? ''}
