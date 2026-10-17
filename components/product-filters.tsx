@@ -14,6 +14,10 @@ type ProductFiltersProps = {
   initialMaxPrice?: string;
 };
 
+const fieldClass =
+  'w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
+const labelClass = 'mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200';
+
 export function ProductFilters({ categories, initialQuery = '', initialCategory = '', initialMinPrice = '', initialMaxPrice = '' }: ProductFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -97,18 +101,18 @@ export function ProductFilters({ categories, initialQuery = '', initialCategory 
 
   return (
     <div className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="mb-4 grid gap-4 sm:grid-cols-[1.4fr_0.6fr]">
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto]">
         <SearchBar value={query} onChange={setQuery} placeholder="Search phone, laptop, fashion..." />
-        <Button className="w-full" variant="primary" onClick={() => updateSearch({ q: query, category, minPrice, maxPrice })}>
+        <Button className="w-full sm:w-40" variant="primary" onClick={() => updateSearch({ q: query, category, minPrice, maxPrice })}>
           Search
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">Category</label>
+          <label className={labelClass}>Category</label>
           <select
-            className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            className={fieldClass}
             value={category || 'All'}
             onChange={(event) => setCategory(event.target.value)}
           >
@@ -121,55 +125,61 @@ export function ProductFilters({ categories, initialQuery = '', initialCategory 
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">Brand</label>
-          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand" className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900" />
+          <label className={labelClass}>Brand</label>
+          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand" className={fieldClass} />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">Min price</label>
+          <label className={labelClass}>Min price</label>
           <input
             type="number"
             min={0}
             step={100}
             value={minPrice}
             onChange={(event) => setMinPrice(event.target.value)}
-            className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            className={fieldClass}
             placeholder="0"
           />
         </div>
 
-        <div className="flex items-end gap-3">
-          <div className="flex w-full items-center gap-2">
-            <select value={sort} onChange={(e) => setSort(e.target.value)} className="rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm w-1/2">
-              <option value="newest">Newest</option>
-              <option value="price_asc">Price: Low → High</option>
-              <option value="price_desc">Price: High → Low</option>
-              <option value="best_rated">Best rated</option>
-              <option value="popular">Most popular</option>
-            </select>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} />
-              In stock
-            </label>
-          </div>
-
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => {
-              setQuery('');
-              setCategory('');
-              setMinPrice('');
-              setMaxPrice('');
-              setBrand('');
-              setAvailable(false);
-              setSort('newest');
-              updateSearch({ q: '', category: '', minPrice: '', maxPrice: '', brand: '', available: false, sort: 'newest' });
-            }}
-          >
-            Clear
-          </Button>
+        <div>
+          <label className={labelClass}>Sort by</label>
+          <select value={sort} onChange={(e) => setSort(e.target.value)} className={fieldClass}>
+            <option value="newest">Newest</option>
+            <option value="price_asc">Price: Low → High</option>
+            <option value="price_desc">Price: High → Low</option>
+            <option value="best_rated">Best rated</option>
+            <option value="popular">Most popular</option>
+          </select>
         </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-brand-500 dark:border-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-brand-600"
+            checked={available}
+            onChange={(e) => setAvailable(e.target.checked)}
+          />
+          In stock
+        </label>
+
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setQuery('');
+            setCategory('');
+            setMinPrice('');
+            setMaxPrice('');
+            setBrand('');
+            setAvailable(false);
+            setSort('newest');
+            updateSearch({ q: '', category: '', minPrice: '', maxPrice: '', brand: '', available: false, sort: 'newest' });
+          }}
+        >
+          Clear
+        </Button>
       </div>
     </div>
   );
