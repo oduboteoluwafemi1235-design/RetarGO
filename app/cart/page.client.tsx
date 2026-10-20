@@ -105,40 +105,81 @@ export default function CartPageClient() {
       {error ? (
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-rose-900">{error}</div>
       ) : cart.length === 0 ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-700">Your cart is empty.</div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-4xl">🛒</p>
+          <p className="mt-3 text-lg font-semibold">Your cart is empty</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Find something you like and it will show up here.</p>
+          <Link
+            href="/products"
+            className="mt-5 inline-flex rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+          >
+            Browse products
+          </Link>
+        </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
-            {cart.map((item) => (
-              <div key={item.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <img src={item.products?.images?.[0] ?? ''} alt={item.products?.title ?? 'Product'} className="h-24 w-24 rounded-3xl object-cover" />
-                  <div className="flex-1">
-                    <p className="text-lg font-semibold">{item.products?.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{formatCurrency(item.products?.price ?? 0)}</p>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <input
-                        type="number"
-                        min={1}
-                        value={item.quantity}
-                        onChange={(e) => updateQuantity(item, Number(e.target.value))}
-                        className="w-24 rounded-2xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none"
-                        disabled={itemLoading[String(item.id)]}
-                      />
-                      <Button variant="secondary" size="sm" onClick={() => updateQuantity(item, item.quantity)} disabled={itemLoading[String(item.id)]}>
-                        {itemLoading[String(item.id)] ? 'Updating…' : 'Update'}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => removeItem(item)} disabled={itemLoading[String(item.id)]}>
-                        {itemLoading[String(item.id)] ? 'Removing…' : 'Remove'}
-                      </Button>
+            {cart.map((item) => {
+              const busy = Boolean(itemLoading[String(item.id)]);
+              const unitPrice = item.products?.price ?? 0;
+              const image = item.products?.images?.[0];
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition duration-200 hover:shadow-soft dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    {image ? (
+                      <img src={image} alt={item.products?.title ?? 'Product'} className="h-24 w-24 rounded-3xl object-cover" />
+                    ) : (
+                      <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-slate-100 text-3xl dark:bg-slate-800">📦</div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-lg font-semibold">{item.products?.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">{formatCurrency(unitPrice)}</p>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <div className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-950">
+                          <button
+                            type="button"
+                            aria-label="Decrease quantity"
+                            onClick={() => updateQuantity(item, item.quantity - 1)}
+                            disabled={busy || item.quantity <= 1}
+                            className="h-10 w-10 rounded-full text-lg font-semibold text-slate-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200"
+                          >
+                            &minus;
+                          </button>
+                          <span className="w-10 text-center text-sm font-semibold">{item.quantity}</span>
+                          <button
+                            type="button"
+                            aria-label="Increase quantity"
+                            onClick={() => updateQuantity(item, item.quantity + 1)}
+                            disabled={busy}
+                            className="h-10 w-10 rounded-full text-lg font-semibold text-slate-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item)}
+                          disabled={busy}
+                          className="text-sm font-semibold text-coral-600 transition hover:text-coral-700 disabled:opacity-40"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Item total</p>
+                      <p className="text-lg font-bold">{formatCurrency(unitPrice * item.quantity)}</p>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+          <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950 lg:sticky lg:top-24 lg:self-start">
             <h2 className="text-xl font-semibold">Order summary</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
               <div className="flex justify-between">Subtotal<span>{formatCurrency(subtotal)}</span></div>
