@@ -12,6 +12,7 @@ type ProductsPageProps = {
     category?: string;
     minPrice?: string;
     maxPrice?: string;
+    available?: string;
   }>;
 };
 
@@ -21,6 +22,7 @@ type ResolvedProductsPageProps = {
     category?: string;
     minPrice?: string;
     maxPrice?: string;
+    available?: string;
     page?: string;
     perPage?: string;
     sort?: string;
@@ -35,6 +37,7 @@ async function ProductList({ searchParams }: ResolvedProductsPageProps) {
     categoryId: selectedCategory ? String(selectedCategory.id) : undefined,
     minPrice: searchParams?.minPrice ? Number(searchParams.minPrice) : undefined,
     maxPrice: searchParams?.maxPrice ? Number(searchParams.maxPrice) : undefined,
+    available: searchParams?.available === '1',
   };
 
   const page = searchParams?.page ? Number(searchParams.page) : 1;
@@ -69,6 +72,8 @@ async function ProductList({ searchParams }: ResolvedProductsPageProps) {
           initialCategory={searchParams?.category ?? ''}
           initialMinPrice={searchParams?.minPrice ?? ''}
           initialMaxPrice={searchParams?.maxPrice ?? ''}
+          initialAvailable={searchParams?.available === '1'}
+          initialSort={searchParams?.sort ?? 'newest'}
         />
 
         <div className="space-y-6">
