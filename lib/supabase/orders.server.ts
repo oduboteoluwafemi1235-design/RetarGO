@@ -171,107 +171,28 @@ export async function getNextOrderNumber() {
 
 export async function createOrderFromCart(userId: string, input: CreateOrderInput): Promise<CreatedOrderResult> {
   const supabase = await createServerClient();
-  // Use explicit application-side order creation to guarantee inventory updates
-  // across partially migrated database functions.
 
-  const { data: cartRows, error: cartError } = await (supabase.from('cart') as any)
-    .select('product_id, quantity, products(id, seller_id, price, title, quantity, stock_quantity, low_stock_threshold, track_inventory, status)')
-    .eq('user_id', userId);
-
-  if (cartError) throw new Error(cartError.message);
-  if (!cartRows || cartRows.length === 0) throw new Error('Cart is empty.');
-
-  const sellerIds = [...new Set(cartRows.map((row: any) => row.products?.seller_id).filter(Boolean))];
-  if (sellerIds.length > 1) {
-    throw new Error('Checkout supports products from one seller at a time. Please remove items from other sellers.');
-  }
-
-  const insufficientStockItem = cartRows.find((row: any) => {
-    if (!row.products || !isInventoryTracked(row.products)) return false;
-    return Number(row.quantity ?? 0) > resolveStockQuantity(row.products);
-  });
-  if (insufficientStockItem) {
-    throw new Error(`Only ${resolveStockQuantity(insufficientStockItem.products ?? {})} items left in stock.`);
-  }
-
-  for (const row of cartRows as any[]) {
-    const quantity = Number(row.quantity ?? 0);
-    const stockQuantity = resolveStockQuantity(row.products ?? {});
-    const tracked = isInventoryTracked(row.products ?? {});
-
-    if (tracked && quantity > stockQuantity) {
-      throw new Error(`Only ${stockQuantity} items left in stock.`);
-    }
-
-    if (tracked) {
-      const { error: stockUpdateError } = await (supabase as any)
-        .rpc('decrement_product_inventory', {
-          p_product_id: row.product_id,
-          p_quantity: quantity,
-        });
-
-      if (stockUpdateError) {
-        throw new Error(stockUpdateError.message);
-      }
-    }
-  }
-
-  const firstSeller = cartRows.find((row: any) => row.products?.seller_id)?.products?.seller_id ?? null;
-  const { data: insertedOrder, error: insertOrderError } = await (supabase.from('orders') as any)
-    .insert({
-      buyer_id: userId,
-      seller_id: firstSeller,
-      order_number: input.orderNumber,
-      shipping_address_id: input.shippingAddressId,
-      contact_email: input.contactEmail,
-      contact_phone: input.contactPhone,
-      subtotal: input.totals.subtotal,
-      shipping_cost: input.totals.shippingCost,
-      tax_amount: input.totals.taxAmount,
-      coupon_code: input.couponCode,
-      checkout_token: input.checkoutToken,
-      total: input.totals.total,
-      status: 'pending',
-    })
-    .select('id, order_number, total, status, created_at')
-    .single();
-
-  if (insertOrderError) throw new Error(insertOrderError.message);
-
-  const orderItemsPayload = cartRows.map((row: any) => {
-    const unitPrice = Number(row.products?.price ?? 0);
-    const quantity = Number(row.quantity ?? 0);
-    return {
-      order_id: insertedOrder.id,
-      product_id: row.product_id,
-      product_title: row.products?.title ?? 'Product',
-      quantity,
-      unit_price: unitPrice,
-      total: unitPrice * quantity,
-    };
+  // One database call: stock check, stock reduction, order, order items and
+  // cart clearing all happen in a single transaction. If any step fails, the
+  // database undoes all of it, including the stock change.
+  const { data, error } = await (supabase as any).rpc('create_order_transaction', {
+    buyer: userId,
+    p_order_number: input.orderNumber,
+    p_shipping_address_id: input.shippingAddressId,
+    p_contact_email: input.contactEmail,
+    p_contact_phone: input.contactPhone,
+    p_subtotal: input.totals.subtotal,
+    p_shipping_cost: input.totals.shippingCost,
+    p_tax_amount: input.totals.taxAmount,
+    p_total: input.totals.total,
+    p_coupon_code: input.couponCode,
+    p_checkout_token: input.checkoutToken,
   });
 
-  const { error: insertItemsError } = await (supabase.from('order_items') as any).insert(orderItemsPayload);
-  if (insertItemsError) {
-    const missingProductTitleColumn = insertItemsError.message.toLowerCase().includes('product_title') && insertItemsError.message.toLowerCase().includes('does not exist');
+  if (error) throw new Error(error.message);
 
-    if (!missingProductTitleColumn) {
-      throw new Error(insertItemsError.message);
-    }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Order could not be created.');
 
-    // Compatibility fallback for legacy databases that do not have order_items.product_title yet.
-    const legacyOrderItemsPayload = orderItemsPayload.map((item: Record<string, unknown>) => {
-      const { product_title, ...rest } = item;
-      return rest;
-    });
-    const { error: legacyInsertItemsError } = await (supabase.from('order_items') as any).insert(legacyOrderItemsPayload);
-    if (legacyInsertItemsError) {
-      throw new Error(legacyInsertItemsError.message);
-    }
-  }
-
-  const { error: clearCartError } = await (supabase.from('cart') as any).delete().eq('user_id', userId);
-  if (clearCartError) throw new Error(clearCartError.message);
-
-  return insertedOrder as CreatedOrderResult;
+  return row as CreatedOrderResult;
 }
