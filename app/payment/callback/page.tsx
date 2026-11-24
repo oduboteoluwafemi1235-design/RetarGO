@@ -14,7 +14,7 @@ function statusStyles(status: string) {
 export default async function PaymentCallbackPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reference?: string; trxref?: string; tx_ref?: string; provider?: string; order?: string; test?: string }>;
+  searchParams: Promise<{ reference?: string; trxref?: string; tx_ref?: string; provider?: string; order?: string }>;
 }) {
   const params = await searchParams;
   const reference = params.reference ?? params.trxref ?? params.tx_ref;
@@ -42,42 +42,7 @@ export default async function PaymentCallbackPage({
     );
   }
 
-  let payment = null as Awaited<ReturnType<typeof getPaymentByReference>>;
-  try {
-    payment = await getPaymentByReference(reference);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    const isTestFallback = params.test === '1' && (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.toLowerCase().includes('public.payments'));
-    if (!isTestFallback) {
-      throw error;
-    }
-
-    if (params.order) {
-      await (supabase.from('orders') as any)
-        .update({ status: 'processing' })
-        .eq('buyer_id', user.id)
-        .eq('order_number', params.order);
-    }
-
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <h1 className="text-2xl font-semibold">Payment update</h1>
-          <p className="mt-3 text-lg font-semibold text-emerald-700 dark:text-emerald-300">Status: successful (test mode)</p>
-          <p className="mt-3 text-slate-600 dark:text-slate-300">Reference: {reference}</p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button asChild><Link href="/orders">View orders</Link></Button>
-            {params.order ? (
-              <Button variant="secondary" asChild>
-                <Link href={`/orders/${encodeURIComponent(params.order)}`}>View order details</Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </main>
-    );
-  }
+  const payment = await getPaymentByReference(reference);
 
   if (!payment || payment.buyer_id !== user.id) {
     redirect('/orders');
@@ -92,8 +57,9 @@ export default async function PaymentCallbackPage({
       eventType: 'payment.callback',
       payload: { params },
     });
-  } catch {
-    // Keep callback page resilient even if provider verification is temporarily unavailable.
+  } catch (error) {
+    // Keep the page resilient, but make the cause visible in the server terminal.
+    console.error('Payment verification failed for reference', reference, error instanceof Error ? error.message : error);
   }
 
   const latest = await getPaymentByReference(reference);

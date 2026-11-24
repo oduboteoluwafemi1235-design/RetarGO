@@ -278,6 +278,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       paymentReference: initialized.providerReference,
     };
   } catch (error) {
+    console.error('Checkout failed:', error);
     const message = error instanceof Error ? error.message : 'Unable to complete your checkout right now.';
     return { ok: false, error: message };
   }
