@@ -73,7 +73,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
     };
   }
 
-  const data = parsed.data;
+  const data = parsed.data; let orderToCancel = null as string | null;
 
   try {
     const supabase = await createClient();
@@ -191,7 +191,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       throw (lastOrderError instanceof Error ? lastOrderError : new Error('Unable to create order right now.'));
     }
 
-    const provider = data.paymentProvider as PaymentProvider;
+    orderToCancel = createdOrder.order_number; const provider = data.paymentProvider as PaymentProvider;
     const paymentReference = createPaymentReference(provider, createdOrder.order_number);
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
     const callbackUrl = `${appUrl}/payment/callback?provider=${provider}&order=${encodeURIComponent(createdOrder.order_number)}`;
@@ -278,7 +278,7 @@ export async function placeOrderAction(payload: CheckoutPayload): Promise<Checko
       paymentReference: initialized.providerReference,
     };
   } catch (error) {
-    console.error('Checkout failed:', error);
+    console.error('Checkout failed:', error); if (orderToCancel) { try { const cancelClient = await createClient(); await (cancelClient as any).rpc('cancel_unpaid_order', { p_order_number: orderToCancel }); } catch (cancelError) { console.error('Could not cancel unpaid order:', cancelError); } }
     const message = error instanceof Error ? error.message : 'Unable to complete your checkout right now.';
     return { ok: false, error: message };
   }
